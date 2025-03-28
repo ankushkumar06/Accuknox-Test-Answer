@@ -1,0 +1,207 @@
+
+Question 1: By default are django signals executed synchronously or asynchronously? Please support your answer with a code snippet that conclusively proves your stance. 
+The code does not need to be elegant and production ready, we just need to understand your logic.
+
+Answer:- By default, Django signals are executed synchronously. This means that when a signal is sent, all connected receiver functions are called immediately in the same thread, 
+blocking the execution until all receivers have completed.
+
+Here's a simple code snippet that proves this behavior:
+
+from django.dispatch import Signal, receiver
+import time
+
+# Create a signal
+my_signal = Signal()
+
+@receiver(my_signal)
+def slow_receiver(sender, **kwargs):
+    print("Receiver started")
+    time.sleep(3)  # Simulate a slow operation
+    print("Receiver finished")
+
+print("Sending signal...")
+my_signal.send(sender=None)
+print("Signal sent")
+
+When you run this code, you'll see the following output:
+
+Sending signal...
+Receiver started
+Receiver finished
+Signal sent
+
+The key observation here is that:
+
+"Signal sent" is printed only after the receiver has finished (after the 3-second sleep)
+
+The execution flow is clearly sequential (synchronous)
+
+If signals were asynchronous, you would see "Signal sent" immediately after "Receiver started", without waiting for the receiver to finish.
+
+This synchronous behavior is documented in Django's official documentation, though they don't explicitly state "synchronous", the entire design and examples imply synchronous execution.
+
+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+Question 2: Do django signals run in the same thread as the caller? Please support your answer with a code snippet that conclusively proves your stance. The code does not need to be 
+elegant and production ready, we just need to understand your logic.
+
+Answer:-Yes, Django signals run in the same thread as the caller by default. This means signal receivers execute sequentially in the same thread where send() is called, blocking further 
+execution until all receivers finish.
+
+Proof via Thread ID Check
+Here's a code snippet that verifies this by comparing thread IDs:
+
+import threading
+from django.dispatch import Signal, receiver
+
+# Create a signal
+my_signal = Signal()
+
+@receiver(my_signal)
+def receiver_function(sender, **kwargs):
+    print(f"Receiver thread ID: {threading.get_ident()}")
+
+# Get the caller's thread ID
+caller_thread_id = threading.get_ident()
+print(f"Caller thread ID: {caller_thread_id}")
+
+# Send the signal
+my_signal.send(sender=None)
+
+Expected Output:
+
+Caller thread ID: 123456789  (Example ID, actual will vary)
+Receiver thread ID: 123456789
+
+Key Observations:
+The same thread ID is printed for both the caller and the receiver.
+
+If signals ran in a different thread, the IDs would differ.
+
+This confirms signal handlers execute synchronously in the caller's thread.
+
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+Question 3: By default do django signals run in the same database transaction as the caller? Please support your answer with a code snippet that conclusively proves your stance. 
+The code does not need to be elegant and production ready, we just need to understand your logic.
+
+Answer:- By default, Django signals run in the same database transaction as the caller if the caller is inside a transaction. Otherwise, they run without any transaction. 
+This behavior depends on how the calling code is structured.
+
+Proof: Signal Inside a Transaction
+Here’s a test case that demonstrates whether signal receivers are part of the caller’s transaction:
+
+from django.db import transaction, models
+from django.db.models.signals import post_save
+from django.dispatch import receiver
+
+class TestModel(models.Model):
+    name = models.CharField(max_length=100)
+
+@receiver(post_save, sender=TestModel)
+def post_save_receiver(sender, instance, **kwargs):
+    print(f"Inside receiver, transaction active: {transaction.get_autocommit()}")
+    if transaction.get_autocommit():
+        print("Receiver runs in autocommit mode (no transaction)")
+    else:
+        print("Receiver runs inside the caller's transaction")
+
+# Case 1: Signal triggered inside a transaction
+print("--- Testing inside a transaction ---")
+with transaction.atomic():
+    print(f"Caller transaction active: {not transaction.get_autocommit()}")
+    TestModel.objects.create(name="Test Inside Transaction")
+
+# Case 2: Signal triggered outside a transaction
+print("\n--- Testing outside a transaction ---")
+print(f"Caller transaction active: {not transaction.get_autocommit()}")
+TestModel.objects.create(name="Test Outside Transaction")
+
+
+Expected Output:
+
+--- Testing inside a transaction ---
+Caller transaction active: True
+Inside receiver, transaction active: False
+Receiver runs inside the caller's transaction
+
+--- Testing outside a transaction ---
+Caller transaction active: False
+Inside receiver, transaction active: True
+Receiver runs in autocommit mode (no transaction)
+
+Key Observations:
+When called inside transaction.atomic():
+
+The signal receiver shares the same transaction (get_autocommit() == False).
+
+If the transaction is rolled back, changes made in the receiver are also rolled back.
+
+When called outside a transaction:
+
+The receiver runs in autocommit mode (get_autocommit() == True).
+
+Changes in the receiver are committed immediately.
+
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+Topic: Custom Classes in Python
+
+Description: You are tasked with creating a Rectangle class with the following requirements:
+
+An instance of the Rectangle class requires length:int and width:int to be initialized.
+We can iterate over an instance of the Rectangle class 
+When an instance of the Rectangle class is iterated over, we first get its length in the format: {'length': <VALUE_OF_LENGTH>} followed by the width {width: <VALUE_OF_WIDTH>}
+
+Answer:-
+
+Here's a Python implementation of the Rectangle class that meets your requirements:
+
+class Rectangle:
+    def __init__(self, length: int, width: int):
+        self.length = length
+        self.width = width
+        self._iter_index = 0  # Used to track iteration state
+
+    def __iter__(self):
+        self._iter_index = 0  # Reset iteration counter
+        return self
+
+    def __next__(self):
+        if self._iter_index == 0:
+            self._iter_index += 1
+            return {'length': self.length}
+        elif self._iter_index == 1:
+            self._iter_index += 1
+            return {'width': self.width}
+        else:
+            raise StopIteration
+
+Explanation:
+Initialization:
+
+The __init__ method takes length and width as integers and stores them as instance attributes.
+
+Iteration Protocol:
+
+__iter__ initializes/resets the iteration counter (_iter_index) and returns the iterator object (self).
+
+__next__ returns the length and width in sequence as dictionaries:
+
+First iteration: {'length': self.length}
+
+Second iteration: {'width': self.width}
+
+Subsequent iterations raise StopIteration
+
+Example Usage:
+
+rect = Rectangle(5, 10)
+
+for dimension in rect:
+    print(dimension)
+
+Output:
+
+{'length': 5}
+{'width': 10}
